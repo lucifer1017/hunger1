@@ -700,12 +700,33 @@ export default function Home() {
               actualChainId
             );
             
-            // Generate proactive alerts based on portfolio health
+            // Generate proactive alerts based on portfolio health, collateral ratios, and repayment suggestions
             if (portfolioData && portfolioData.hasPosition) {
+              const collUSD = parseFloat(portfolioData.collateralUSD);
+              const debtUSD = parseFloat(portfolioData.debtUSD);
+              const ltvRatio = portfolioData.ltvRatio;
+              
+              // Critical: Health factor below 1.0 (liquidation risk)
               if (!portfolioData.isHealthy) {
-                portfolioAlert = "🚨 CRITICAL: Your health factor is below 1.0! Your position is at risk of liquidation. Consider adding collateral or repaying debt immediately.";
-              } else if (portfolioData.isAtRisk) {
-                portfolioAlert = "⚠️ WARNING: Your health factor is below 1.5. Your position is approaching risk levels. Consider adding more collateral or reducing debt.";
+                const repaySuggestion = debtUSD > 0 
+                  ? ` Consider repaying at least $${(debtUSD - collUSD * 0.7).toFixed(2)} to restore safety.`
+                  : "";
+                portfolioAlert = `🚨 CRITICAL: Your health factor is below 1.0! Your position is at risk of liquidation. Your LTV ratio is ${ltvRatio.toFixed(1)}% (max safe: 70%).${repaySuggestion} Consider adding collateral or repaying debt immediately.`;
+              } 
+              // Warning: Health factor below 1.5 (approaching risk)
+              else if (portfolioData.isAtRisk) {
+                const repaySuggestion = debtUSD > 0 && ltvRatio > 50
+                  ? ` Your LTV ratio is ${ltvRatio.toFixed(1)}% - consider repaying $${(debtUSD * 0.2).toFixed(2)} to improve your position.`
+                  : "";
+                portfolioAlert = `⚠️ WARNING: Your health factor is below 1.5. Your position is approaching risk levels.${repaySuggestion} Consider adding more collateral or reducing debt.`;
+              }
+              // Info: High LTV ratio (above 50% but still safe)
+              else if (ltvRatio > 50 && ltvRatio < 70) {
+                portfolioAlert = `💡 INFO: Your collateral ratio (LTV: ${ltvRatio.toFixed(1)}%) is getting high. Consider repaying some debt to improve your safety margin. You're currently using ${ltvRatio.toFixed(1)}% of your ${70}% max borrowing capacity.`;
+              }
+              // Repayment suggestion: If debt exists and position is healthy
+              else if (debtUSD > 0 && portfolioData.isHealthy && ltvRatio < 50) {
+                portfolioAlert = `✅ Your position is healthy (LTV: ${ltvRatio.toFixed(1)}%). You can repay debt anytime to improve your health factor or free up borrowing capacity.`;
               }
             }
           }
@@ -815,6 +836,42 @@ export default function Home() {
 
           case "portfolio":
             const portfolio = await handlePortfolio();
+            
+            // Generate proactive alert based on portfolio health
+            const generateProactiveAlert = (p: PortfolioData): { text: string; type: 'critical' | 'warning' | 'info' | 'success' } | null => {
+              if (!p.hasPosition) return null;
+              
+              const collUSD = parseFloat(p.collateralUSD);
+              const debtUSD = parseFloat(p.debtUSD);
+              const ltvRatio = p.ltvRatio;
+              
+              if (!p.isHealthy) {
+                const repayAmount = debtUSD - collUSD * 0.7;
+                return {
+                  text: `🚨 CRITICAL: Your health factor is below 1.0! Your position is at risk of liquidation. LTV: ${ltvRatio.toFixed(1)}% (max safe: 70%). Consider repaying at least $${repayAmount > 0 ? repayAmount.toFixed(4) : '0'} or adding more collateral immediately.`,
+                  type: 'critical'
+                };
+              } else if (p.isAtRisk) {
+                const repayAmount = debtUSD * 0.2;
+                return {
+                  text: `⚠️ WARNING: Your health factor is below 1.5. LTV: ${ltvRatio.toFixed(1)}%. Consider repaying $${repayAmount.toFixed(4)} to improve your position.`,
+                  type: 'warning'
+                };
+              } else if (ltvRatio > 50 && ltvRatio < 70) {
+                return {
+                  text: `💡 INFO: Your LTV ratio (${ltvRatio.toFixed(1)}%) is getting high. You're using ${ltvRatio.toFixed(1)}% of your 70% max borrowing capacity. Consider repaying some debt.`,
+                  type: 'info'
+                };
+              } else if (debtUSD > 0) {
+                return {
+                  text: `✅ Your position is healthy! LTV: ${ltvRatio.toFixed(1)}%. Collateralization: ${p.collateralizationRatio.toFixed(0)}%. You can repay debt anytime to free up borrowing capacity.`,
+                  type: 'success'
+                };
+              }
+              return null;
+            };
+            
+            const proactiveAlert = generateProactiveAlert(portfolio);
             
             // Show helpful message if portfolio is empty
             if (!portfolio.hasPosition) {
@@ -934,19 +991,37 @@ export default function Home() {
                           </span>
                         </div>
                         
-                        {portfolio.healthFactor < 999999 && (
-                          <div className={`text-xs p-2 rounded ${
-                            portfolio.isHealthy 
-                              ? portfolio.isAtRisk 
-                                ? "bg-yellow-500/20 text-yellow-700 dark:text-yellow-400" 
-                                : "bg-green-500/20 text-green-700 dark:text-green-400"
-                              : "bg-red-500/20 text-red-700 dark:text-red-400"
+                        {/* LTV Ratio Display */}
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm">LTV Ratio:</span>
+                          <span className={`font-semibold ${
+                            portfolio.ltvRatio > 70 
+                              ? "text-red-500" 
+                              : portfolio.ltvRatio > 50 
+                                ? "text-yellow-500" 
+                                : "text-green-500"
                           }`}>
-                            {portfolio.isHealthy 
-                              ? portfolio.isAtRisk 
-                                ? "⚠️ Your position is healthy but at risk. Consider reducing debt or adding collateral."
-                                : "✅ Your position is healthy."
-                              : "🚨 Your position is at risk! Health factor below 1.0. Add collateral or repay debt immediately."}
+                            {portfolio.ltvRatio.toFixed(2)}%
+                          </span>
+                        </div>
+                        
+                        {/* Proactive Alert Box */}
+                        {proactiveAlert && (
+                          <div className={`mt-3 p-3 rounded-lg border text-sm ${
+                            proactiveAlert.type === 'critical' 
+                              ? "bg-red-500/10 border-red-500/30 text-red-700 dark:text-red-400" 
+                              : proactiveAlert.type === 'warning'
+                                ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-700 dark:text-yellow-400"
+                                : proactiveAlert.type === 'info'
+                                  ? "bg-blue-500/10 border-blue-500/30 text-blue-700 dark:text-blue-400"
+                                  : "bg-green-500/10 border-green-500/30 text-green-700 dark:text-green-400"
+                          }`}>
+                            <div className="font-semibold mb-1">
+                              {proactiveAlert.type === 'critical' ? '🚨 Proactive Alert' : 
+                               proactiveAlert.type === 'warning' ? '⚠️ Proactive Alert' :
+                               proactiveAlert.type === 'info' ? '💡 Proactive Alert' : '✅ Position Status'}
+                            </div>
+                            <div className="text-xs">{proactiveAlert.text}</div>
                           </div>
                         )}
                       </div>

@@ -16,6 +16,10 @@ export interface PortfolioData {
   maxBorrowableUSD: string; // Formatted USD value
   healthFactor: number; // Health factor as number (e.g., 1.5 = 150% safe)
   
+  // Calculated ratios
+  ltvRatio: number; // Loan-to-Value ratio (debt/collateral) as percentage (e.g., 50 = 50%)
+  collateralizationRatio: number; // Collateralization ratio (collateral/debt) as percentage
+  
   // Status indicators
   isHealthy: boolean; // Health factor > 1.0
   isAtRisk: boolean; // Health factor < 1.5
@@ -76,6 +80,18 @@ export async function fetchPortfolioData(
     const hasNoDebt = healthFactorE18 === BigInt("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
     const actualHealthFactor = hasNoDebt ? Infinity : healthFactor;
 
+    // Calculate collateral ratios
+    const collUSDNum = parseFloat(collateralUSD);
+    const debtUSDNum = parseFloat(debtUSD);
+    
+    // LTV Ratio: (Debt / Collateral) × 100%
+    // Example: $50 debt / $100 collateral = 50% LTV
+    const ltvRatio = collUSDNum > 0 ? (debtUSDNum / collUSDNum) * 100 : 0;
+    
+    // Collateralization Ratio: (Collateral / Debt) × 100%
+    // Example: $100 collateral / $50 debt = 200% collateralization
+    const collateralizationRatio = debtUSDNum > 0 ? (collUSDNum / debtUSDNum) * 100 : Infinity;
+
     return {
       // Formatted values (JSON-serializable)
       collateralRBTC,
@@ -84,6 +100,10 @@ export async function fetchPortfolioData(
       debtUSD,
       maxBorrowableUSD,
       healthFactor: actualHealthFactor === Infinity ? 999999 : actualHealthFactor, // Use large number for Infinity
+      
+      // Calculated ratios
+      ltvRatio,
+      collateralizationRatio: collateralizationRatio === Infinity ? 999999 : collateralizationRatio,
       
       // Status indicators
       isHealthy: actualHealthFactor > 1.0,
