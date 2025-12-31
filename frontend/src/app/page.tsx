@@ -28,11 +28,14 @@ import {
   sendTransaction,
   writeContract,
 } from "@wagmi/core";
-import { checksumAddress, erc20Abi, isAddress, parseEther } from "viem";
+import { checksumAddress, erc20Abi, isAddress, parseEther, parseUnits, formatUnits } from "viem";
 import { findToken, isValidWalletAddress } from "@/lib/utils";
 import { BLOCK_EXPLORER_URL } from "@/lib/contants";
 import { rootstockTestnet } from "@/config/chains";
 import { fetchPortfolioData, type PortfolioData } from "@/lib/portfolio";
+import { getContractAddress } from "@/lib/contracts";
+import LendingPoolABI from "@/lib/abis/LendingPool.json";
+import MockUSDT0ABI from "@/lib/abis/MockUSDT0.json";
 
 export default function Home() {
   const [messages, setMessages] = useState<
@@ -254,8 +257,11 @@ export default function Home() {
       // Ensure we're on Rootstock testnet before checking balance
       await ensureRootstockTestnet();
 
+      // Handle null/undefined data - default to empty object
+      const safeData = data || {};
+
       // Default to tRBTC if no token specified
-      const tokenSymbol = data.token1?.toLowerCase() || "trbtc";
+      const tokenSymbol = safeData.token1?.toLowerCase() || "trbtc";
       
       const tokenAdd =
         tokenSymbol === "trbtc"
@@ -263,11 +269,11 @@ export default function Home() {
           : await findToken(tokenSymbol);
 
       if (!tokenAdd && tokenSymbol !== "trbtc") {
-        throw new Error(`Token "${data.token1 || tokenSymbol}" not found`);
+        throw new Error(`Token "${safeData.token1 || tokenSymbol}" not found`);
       }
 
       // Use provided address or default to user's address
-      const acc = (data.address && isAddress(data.address)) ? data.address : address;
+      const acc = (safeData.address && isAddress(safeData.address)) ? safeData.address : address;
       
       if (!acc) {
         throw new Error("No address provided and wallet not connected");
@@ -329,6 +335,325 @@ export default function Home() {
     } catch (error) {
       console.error("Failed to fetch portfolio:", error);
       throw error;
+    }
+  };
+
+  const handleDeposit = async (data: { amount: number }) => {
+    try {
+      // Validate amount
+      if (!data.amount || data.amount <= 0) {
+        throw new Error("Deposit amount must be greater than 0");
+      }
+
+      if (data.amount > 1000000) {
+        throw new Error("Deposit amount is too large. Maximum is 1,000,000 tRBTC");
+      }
+
+      // Ensure we're on Rootstock testnet
+      await ensureRootstockTestnet();
+
+      const account = wagmiAddress || address;
+      if (!account) {
+        throw new Error("No account connected");
+      }
+
+      // Verify we're on the correct network
+      const actualChainId = await getMetaMaskChainId();
+      if (actualChainId !== rootstockTestnet.id) {
+        throw new Error("Must be on Rootstock Testnet to deposit collateral");
+      }
+
+      // Get contract address
+      const lendingPoolAddress = getContractAddress(actualChainId, "LENDING_POOL");
+
+      // Parse amount to wei (18 decimals)
+      // Use toFixed to avoid scientific notation for very small numbers
+      // tRBTC has 18 decimals, so we need to handle up to 18 decimal places
+      const amountString = data.amount.toFixed(18).replace(/\.?0+$/, '');
+      const amountWei = parseEther(amountString);
+
+      console.log(`Depositing ${data.amount} tRBTC (${amountWei.toString()} wei) to LendingPool at ${lendingPoolAddress}`);
+
+      // Call depositRBTC() - it's a payable function, so we send value with the transaction
+      const transactionHash = await writeContract(config, {
+        address: lendingPoolAddress,
+        abi: LendingPoolABI,
+        functionName: "depositRBTC",
+        args: [],
+        value: amountWei,
+        account: account as `0x${string}`,
+      });
+
+      console.log("Deposit transaction hash:", transactionHash);
+
+      return transactionHash;
+    } catch (error: any) {
+      console.error("Deposit failed:", error);
+      
+      // Provide user-friendly error messages
+      if (error?.message?.includes("insufficient funds") || error?.message?.includes("balance")) {
+        throw new Error(`Insufficient tRBTC balance. You need at least ${data.amount} tRBTC to deposit.`);
+      }
+      
+      if (error?.message?.includes("user rejected") || error?.code === 4001) {
+        throw new Error("Deposit transaction was rejected. Please approve the transaction in MetaMask.");
+      }
+
+      if (error?.message?.includes("ZERO_DEPOSIT")) {
+        throw new Error("Deposit amount must be greater than 0");
+      }
+
+      throw new Error(error?.message || `Deposit failed: ${error?.toString() || "Unknown error"}`);
+    }
+  };
+
+  const handleWithdraw = async (data: { amount: number }) => {
+    try {
+      // Validate amount
+      if (!data.amount || data.amount <= 0) {
+        throw new Error("Withdrawal amount must be greater than 0");
+      }
+
+      // Ensure we're on Rootstock testnet
+      await ensureRootstockTestnet();
+
+      const account = wagmiAddress || address;
+      if (!account) {
+        throw new Error("No account connected");
+      }
+
+      // Verify we're on the correct network
+      const actualChainId = await getMetaMaskChainId();
+      if (actualChainId !== rootstockTestnet.id) {
+        throw new Error("Must be on Rootstock Testnet to withdraw collateral");
+      }
+
+      // Get contract address
+      const lendingPoolAddress = getContractAddress(actualChainId, "LENDING_POOL");
+
+      // Parse amount to wei (18 decimals) - handle small numbers
+      const amountString = data.amount.toFixed(18).replace(/\.?0+$/, '');
+      const amountWei = parseEther(amountString);
+
+      console.log(`Withdrawing ${data.amount} tRBTC (${amountWei.toString()} wei) from LendingPool`);
+
+      // Call withdrawRBTC(uint256 amountWei)
+      const transactionHash = await writeContract(config, {
+        address: lendingPoolAddress,
+        abi: LendingPoolABI,
+        functionName: "withdrawRBTC",
+        args: [amountWei],
+        account: account as `0x${string}`,
+      });
+
+      console.log("Withdraw transaction hash:", transactionHash);
+      return transactionHash;
+    } catch (error: any) {
+      console.error("Withdraw failed:", error);
+      
+      if (error?.message?.includes("INSUFFICIENT_COLLATERAL_BAL") || error?.message?.includes("insufficient")) {
+        throw new Error(`Insufficient collateral. You don't have enough tRBTC deposited to withdraw ${data.amount} tRBTC.`);
+      }
+      
+      if (error?.message?.includes("HF_LT_1") || error?.message?.includes("health factor")) {
+        throw new Error(`Cannot withdraw: This would make your health factor drop below 1.0. Reduce your debt or withdraw less collateral.`);
+      }
+      
+      if (error?.message?.includes("user rejected") || error?.code === 4001) {
+        throw new Error("Withdrawal transaction was rejected. Please approve the transaction in MetaMask.");
+      }
+
+      throw new Error(error?.message || `Withdrawal failed: ${error?.toString() || "Unknown error"}`);
+    }
+  };
+
+  const handleBorrow = async (data: { amount: number }) => {
+    try {
+      // Validate amount
+      if (!data.amount || data.amount <= 0) {
+        throw new Error("Borrow amount must be greater than 0");
+      }
+
+      // Ensure we're on Rootstock testnet
+      await ensureRootstockTestnet();
+
+      const account = wagmiAddress || address;
+      if (!account) {
+        throw new Error("No account connected");
+      }
+
+      // Verify we're on the correct network
+      const actualChainId = await getMetaMaskChainId();
+      if (actualChainId !== rootstockTestnet.id) {
+        throw new Error("Must be on Rootstock Testnet to borrow");
+      }
+
+      // Get contract addresses
+      const lendingPoolAddress = getContractAddress(actualChainId, "LENDING_POOL");
+
+      // Pre-check: Fetch portfolio to validate max borrowable
+      const portfolioData = await fetchPortfolioData(
+        config,
+        account as `0x${string}`,
+        actualChainId
+      );
+
+      if (!portfolioData || !portfolioData.hasPosition) {
+        throw new Error("You need to deposit collateral first before you can borrow.");
+      }
+
+      // USDT0 has 6 decimals, parse amount accordingly
+      const amountString = data.amount.toFixed(6).replace(/\.?0+$/, '');
+      const amountUSDT0 = parseUnits(amountString, 6);
+
+      // Calculate USD value of borrow amount (assuming USDT0 = $1, but we should check)
+      // For now, we'll use the max borrowable USD value from portfolio
+      const maxBorrowableUSD = parseFloat(portfolioData.maxBorrowableUSD);
+      const borrowAmountUSD = data.amount; // Assuming USDT0 ≈ $1
+
+      if (borrowAmountUSD > maxBorrowableUSD) {
+        throw new Error(
+          `Cannot borrow $${borrowAmountUSD.toFixed(6)} worth of USDT0. ` +
+          `Your max borrowable is $${maxBorrowableUSD.toFixed(6)} based on your collateral. ` +
+          `You have ${portfolioData.collateralRBTC} tRBTC collateral worth $${portfolioData.collateralUSD}. ` +
+          `Try borrowing less or deposit more collateral.`
+        );
+      }
+
+      console.log(`Borrowing ${data.amount} USDT0 (${amountUSDT0.toString()} smallest units) from LendingPool`);
+      console.log(`Max borrowable: $${maxBorrowableUSD}, Requested: $${borrowAmountUSD}`);
+
+      // Call borrowUSDT0(uint256 amount)
+      const transactionHash = await writeContract(config, {
+        address: lendingPoolAddress,
+        abi: LendingPoolABI,
+        functionName: "borrowUSDT0",
+        args: [amountUSDT0],
+        account: account as `0x${string}`,
+      });
+
+      console.log("Borrow transaction hash:", transactionHash);
+      return transactionHash;
+    } catch (error: any) {
+      console.error("Borrow failed:", error);
+      
+      // Don't wrap our custom error messages
+      if (error?.message && (
+        error.message.includes("Cannot borrow") ||
+        error.message.includes("max borrowable") ||
+        error.message.includes("need to deposit")
+      )) {
+        throw error;
+      }
+      
+      if (error?.message?.includes("INSUFFICIENT_COLLATERAL") || error?.message?.includes("insufficient")) {
+        throw new Error(
+          `❌ Insufficient collateral! ` +
+          `You tried to borrow ${data.amount} USDT0, but you don't have enough collateral. ` +
+          `Check your portfolio to see your max borrowable amount. ` +
+          `You may need to deposit more tRBTC collateral first.`
+        );
+      }
+      
+      if (error?.message?.includes("user rejected") || error?.code === 4001) {
+        throw new Error("Borrow transaction was rejected. Please approve the transaction in MetaMask.");
+      }
+
+      throw new Error(error?.message || `Borrow failed: ${error?.toString() || "Unknown error"}`);
+    }
+  };
+
+  const handleRepay = async (data: { amount: number }) => {
+    try {
+      // Validate amount
+      if (!data.amount || data.amount <= 0) {
+        throw new Error("Repay amount must be greater than 0");
+      }
+
+      // Ensure we're on Rootstock testnet
+      await ensureRootstockTestnet();
+
+      const account = wagmiAddress || address;
+      if (!account) {
+        throw new Error("No account connected");
+      }
+
+      // Verify we're on the correct network
+      const actualChainId = await getMetaMaskChainId();
+      if (actualChainId !== rootstockTestnet.id) {
+        throw new Error("Must be on Rootstock Testnet to repay debt");
+      }
+
+      // Get contract addresses
+      const lendingPoolAddress = getContractAddress(actualChainId, "LENDING_POOL");
+      const usdt0Address = getContractAddress(actualChainId, "MOCK_USDT0");
+
+      // USDT0 has 6 decimals, parse amount accordingly
+      const amountString = data.amount.toFixed(6).replace(/\.?0+$/, '');
+      const amountUSDT0 = parseUnits(amountString, 6);
+
+      console.log(`Repaying ${data.amount} USDT0 (${amountUSDT0.toString()} smallest units) to LendingPool`);
+
+      // First, check and approve if needed
+      try {
+        const currentAllowance = await readContract(config, {
+          address: usdt0Address,
+          abi: erc20Abi,
+          functionName: "allowance",
+          args: [account as `0x${string}`, lendingPoolAddress],
+        });
+
+        if (currentAllowance < amountUSDT0) {
+          console.log("Approving USDT0 spending...");
+          // Approve the lending pool to spend USDT0
+          const approveHash = await writeContract(config, {
+            address: usdt0Address,
+            abi: erc20Abi,
+            functionName: "approve",
+            args: [lendingPoolAddress, amountUSDT0],
+            account: account as `0x${string}`,
+          });
+          console.log("Approve transaction hash:", approveHash);
+          
+          // Wait a bit for approval to be mined
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      } catch (approveError) {
+        console.error("Approval check/action failed:", approveError);
+        // Continue anyway - maybe already approved
+      }
+
+      // Call repayUSDT0(uint256 amount)
+      const transactionHash = await writeContract(config, {
+        address: lendingPoolAddress,
+        abi: LendingPoolABI,
+        functionName: "repayUSDT0",
+        args: [amountUSDT0],
+        account: account as `0x${string}`,
+      });
+
+      console.log("Repay transaction hash:", transactionHash);
+      return transactionHash;
+    } catch (error: any) {
+      console.error("Repay failed:", error);
+      
+      if (error?.message?.includes("NO_DEBT") || error?.message?.includes("no debt")) {
+        throw new Error("You don't have any debt to repay.");
+      }
+      
+      if (error?.message?.includes("insufficient allowance") || error?.message?.includes("allowance")) {
+        throw new Error("Insufficient USDT0 allowance. Please approve the LendingPool to spend your USDT0 first.");
+      }
+      
+      if (error?.message?.includes("insufficient balance") || error?.message?.includes("balance")) {
+        throw new Error(`Insufficient USDT0 balance. You need at least ${data.amount} USDT0 to repay.`);
+      }
+      
+      if (error?.message?.includes("user rejected") || error?.code === 4001) {
+        throw new Error("Repay transaction was rejected. Please approve the transaction in MetaMask.");
+      }
+
+      throw new Error(error?.message || `Repay failed: ${error?.toString() || "Unknown error"}`);
     }
   };
 
@@ -630,6 +955,199 @@ export default function Home() {
                 },
               ]);
             }
+            break;
+
+          case "deposit":
+            if (!functionData?.arguments?.amount) {
+              throw new Error("Deposit amount is required");
+            }
+
+            // Check if we need to switch networks and inform the user
+            const currentChainForDeposit = await getMetaMaskChainId();
+            if (currentChainForDeposit !== rootstockTestnet.id) {
+              setMessages([
+                ...newMessages.slice(0, -1),
+                {
+                  role: "bot",
+                  content: `⚠️ Switching to Rootstock Testnet... Please approve the network switch prompt in MetaMask to deposit tRBTC collateral.`,
+                },
+              ]);
+            }
+
+            const depositHash = await handleDeposit(functionData.arguments);
+            setMessages([
+              ...newMessages.slice(0, -1),
+              {
+                role: "bot",
+                content: (
+                  <div className="w-full space-y-2">
+                    <div className="text-green-600 dark:text-green-400 font-semibold">
+                      ✅ Deposit Successful!
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      Deposited {functionData.arguments.amount} tRBTC as collateral
+                    </div>
+                    <a
+                      href={`${BLOCK_EXPLORER_URL}${depositHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-500 hover:text-blue-600 flex items-center gap-1 text-sm"
+                    >
+                      View Transaction:{" "}
+                      {`${depositHash.slice(0, 6)}...${depositHash.slice(-4)}`}
+                      <ExternalLink size={14} />
+                    </a>
+                    <div className="text-xs text-muted-foreground mt-2">
+                      💡 You can now borrow USDT0 against your collateral or check your updated portfolio.
+                    </div>
+                  </div>
+                ),
+              },
+            ]);
+            break;
+
+          case "withdraw":
+            if (!functionData?.arguments?.amount) {
+              throw new Error("Withdrawal amount is required");
+            }
+
+            const currentChainForWithdraw = await getMetaMaskChainId();
+            if (currentChainForWithdraw !== rootstockTestnet.id) {
+              setMessages([
+                ...newMessages.slice(0, -1),
+                {
+                  role: "bot",
+                  content: `⚠️ Switching to Rootstock Testnet... Please approve the network switch prompt in MetaMask to withdraw tRBTC collateral.`,
+                },
+              ]);
+            }
+
+            const withdrawHash = await handleWithdraw(functionData.arguments);
+            setMessages([
+              ...newMessages.slice(0, -1),
+              {
+                role: "bot",
+                content: (
+                  <div className="w-full space-y-2">
+                    <div className="text-green-600 dark:text-green-400 font-semibold">
+                      ✅ Withdrawal Successful!
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      Withdrew {functionData.arguments.amount} tRBTC from collateral
+                    </div>
+                    <a
+                      href={`${BLOCK_EXPLORER_URL}${withdrawHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-500 hover:text-blue-600 flex items-center gap-1 text-sm"
+                    >
+                      View Transaction:{" "}
+                      {`${withdrawHash.slice(0, 6)}...${withdrawHash.slice(-4)}`}
+                      <ExternalLink size={14} />
+                    </a>
+                    <div className="text-xs text-muted-foreground mt-2">
+                      💡 Check your updated portfolio to see your new collateral balance.
+                    </div>
+                  </div>
+                ),
+              },
+            ]);
+            break;
+
+          case "borrow":
+            if (!functionData?.arguments?.amount) {
+              throw new Error("Borrow amount is required");
+            }
+
+            const currentChainForBorrow = await getMetaMaskChainId();
+            if (currentChainForBorrow !== rootstockTestnet.id) {
+              setMessages([
+                ...newMessages.slice(0, -1),
+                {
+                  role: "bot",
+                  content: `⚠️ Switching to Rootstock Testnet... Please approve the network switch prompt in MetaMask to borrow USDT0.`,
+                },
+              ]);
+            }
+
+            const borrowHash = await handleBorrow(functionData.arguments);
+            setMessages([
+              ...newMessages.slice(0, -1),
+              {
+                role: "bot",
+                content: (
+                  <div className="w-full space-y-2">
+                    <div className="text-green-600 dark:text-green-400 font-semibold">
+                      ✅ Borrow Successful!
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      Borrowed {functionData.arguments.amount} USDT0 against your collateral
+                    </div>
+                    <a
+                      href={`${BLOCK_EXPLORER_URL}${borrowHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-500 hover:text-blue-600 flex items-center gap-1 text-sm"
+                    >
+                      View Transaction:{" "}
+                      {`${borrowHash.slice(0, 6)}...${borrowHash.slice(-4)}`}
+                      <ExternalLink size={14} />
+                    </a>
+                    <div className="text-xs text-muted-foreground mt-2">
+                      ⚠️ You now have debt. Monitor your health factor and repay when ready.
+                    </div>
+                  </div>
+                ),
+              },
+            ]);
+            break;
+
+          case "repay":
+            if (!functionData?.arguments?.amount) {
+              throw new Error("Repay amount is required");
+            }
+
+            const currentChainForRepay = await getMetaMaskChainId();
+            if (currentChainForRepay !== rootstockTestnet.id) {
+              setMessages([
+                ...newMessages.slice(0, -1),
+                {
+                  role: "bot",
+                  content: `⚠️ Switching to Rootstock Testnet... Please approve the network switch prompt in MetaMask to repay USDT0 debt.`,
+                },
+              ]);
+            }
+
+            const repayHash = await handleRepay(functionData.arguments);
+            setMessages([
+              ...newMessages.slice(0, -1),
+              {
+                role: "bot",
+                content: (
+                  <div className="w-full space-y-2">
+                    <div className="text-green-600 dark:text-green-400 font-semibold">
+                      ✅ Repayment Successful!
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      Repaid {functionData.arguments.amount} USDT0 debt
+                    </div>
+                    <a
+                      href={`${BLOCK_EXPLORER_URL}${repayHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-500 hover:text-blue-600 flex items-center gap-1 text-sm"
+                    >
+                      View Transaction:{" "}
+                      {`${repayHash.slice(0, 6)}...${repayHash.slice(-4)}`}
+                      <ExternalLink size={14} />
+                    </a>
+                    <div className="text-xs text-muted-foreground mt-2">
+                      ✅ Your health factor has improved! Check your updated portfolio.
+                    </div>
+                  </div>
+                ),
+              },
+            ]);
             break;
 
           default:

@@ -128,6 +128,74 @@ export async function POST(req: Request) {
             },
           },
         },
+        {
+          type: "function",
+          function: {
+            name: "deposit",
+            description: "Deposit tRBTC (native token) as collateral into the LendingPool. This allows the user to borrow against their collateral later.",
+            parameters: {
+              type: "object",
+              properties: {
+                amount: {
+                  type: "number",
+                  description: "Amount of tRBTC to deposit as collateral (e.g., 0.1, 1.5, 10)",
+                },
+              },
+              required: ["amount"],
+            },
+          },
+        },
+        {
+          type: "function",
+          function: {
+            name: "withdraw",
+            description: "Withdraw tRBTC collateral from the LendingPool. The withdrawal must maintain health factor above 1.0.",
+            parameters: {
+              type: "object",
+              properties: {
+                amount: {
+                  type: "number",
+                  description: "Amount of tRBTC to withdraw from collateral (e.g., 0.1, 1.5, 10)",
+                },
+              },
+              required: ["amount"],
+            },
+          },
+        },
+        {
+          type: "function",
+          function: {
+            name: "borrow",
+            description: "Borrow USDT0 against deposited tRBTC collateral. The borrow amount must not exceed max borrowable based on collateral.",
+            parameters: {
+              type: "object",
+              properties: {
+                amount: {
+                  type: "number",
+                  description: "Amount of USDT0 to borrow (e.g., 100, 500, 1000)",
+                },
+              },
+              required: ["amount"],
+            },
+          },
+        },
+        {
+          type: "function",
+          function: {
+            name: "repay",
+            description: "Repay USDT0 debt to the LendingPool. This reduces the user's debt and improves their health factor.",
+            parameters: {
+              type: "object",
+              properties: {
+                amount: {
+                  type: "number",
+                  description: "Amount of USDT0 to repay (e.g., 100, 500, 1000). Can repay partial or full debt.",
+                },
+              },
+              required: ["amount"],
+            },
+          },
+        },
       ],
       tool_choice: "auto",
     });
@@ -232,10 +300,14 @@ function createChatPrompt(userContext: any, portfolioAlert: string | null, quest
 
   When I ask to send RBTC, you should interpret this as tRBTC (testnet RBTC). Always use tRBTC in your function calls and responses.
 
-  If needed, you can USE FUNCTIONS like **transfer**, **balance**, or **portfolio** to help me with my request. 
+  If needed, you can USE FUNCTIONS like **transfer**, **balance**, **portfolio**, **deposit**, **withdraw**, **borrow**, or **repay** to help me with my request. 
   - WHENEVER ASKED TO SEND TOKENS, PLEASE USE THE **transfer** FUNCTION
   - WHENEVER ASKED TO CHECK BALANCES, PLEASE USE THE **balance** FUNCTION
   - WHENEVER ASKED ABOUT PORTFOLIO, LENDING POSITION, COLLATERAL, DEBT, HEALTH FACTOR, OR BORROWING CAPACITY, PLEASE USE THE **portfolio** FUNCTION
+  - WHENEVER ASKED TO DEPOSIT tRBTC AS COLLATERAL, DEPOSIT COLLATERAL, ADD COLLATERAL, OR PUT tRBTC INTO THE LENDING POOL, PLEASE USE THE **deposit** FUNCTION with the amount specified
+  - WHENEVER ASKED TO WITHDRAW tRBTC COLLATERAL, WITHDRAW COLLATERAL, OR REMOVE COLLATERAL, PLEASE USE THE **withdraw** FUNCTION with the amount specified
+  - WHENEVER ASKED TO BORROW USDT0, BORROW AGAINST COLLATERAL, OR TAKE A LOAN, PLEASE USE THE **borrow** FUNCTION with the USDT0 amount specified
+  - WHENEVER ASKED TO REPAY USDT0 DEBT, REPAY DEBT, PAY BACK LOAN, OR REDUCE DEBT, PLEASE USE THE **repay** FUNCTION with the USDT0 amount specified
   
   Be conversational and friendly - like a professional financial advisor would be, not like a generic chatbot. Avoid technical language about functions or API calls - speak to me naturally about my options.`;
 }
