@@ -28,9 +28,9 @@ import {
   sendTransaction,
   writeContract,
 } from "@wagmi/core";
-import { checksumAddress, erc20Abi, isAddress, parseEther, parseUnits, formatUnits } from "viem";
+import { checksumAddress, erc20Abi, isAddress, parseEther, parseUnits, formatEther, formatUnits } from "viem";
 import { findToken, isValidWalletAddress } from "@/lib/utils";
-import { BLOCK_EXPLORER_URL } from "@/lib/contants";
+import { BLOCK_EXPLORER_URL } from "@/lib/constants";
 import { rootstockTestnet } from "@/config/chains";
 import { fetchPortfolioData, type PortfolioData } from "@/lib/portfolio";
 import { getContractAddress } from "@/lib/contracts";
@@ -201,6 +201,15 @@ export default function Home() {
 
       if (!tokenAddress) throw new Error("Token not found");
 
+      // Validate recipient address using viem's isAddress validator
+      if (!data.address || !isAddress(data.address)) {
+        throw new Error(
+          `Invalid recipient address: "${data.address || 'undefined'}"\n\n` +
+          `Please provide a valid Ethereum address starting with "0x" followed by 40 hexadecimal characters.`
+        );
+      }
+      const validatedRecipient = checksumAddress(data.address as `0x${string}`);
+
       // ABSOLUTE FINAL CHECK - Get chain directly from MetaMask
       const finalChainId = await getMetaMaskChainId();
       console.log(`🔍 FINAL CHECK (from MetaMask): Chain ID ${finalChainId}, required: ${rootstockTestnet.id}`);
@@ -233,15 +242,21 @@ export default function Home() {
         
         transactionHash = await sendTransaction(config, {
           account: account as `0x${string}`,
-          to: data.address as `0x${string}`,
+          to: validatedRecipient,
           value: parseEther(data.amount.toString()),
         });
       } else {
+        // Validate token contract address
+        if (!isAddress(tokenAddress)) {
+          throw new Error(`Invalid token contract address: "${tokenAddress}"`);
+        }
+        const validatedTokenAddress = checksumAddress(tokenAddress as `0x${string}`);
+        
         transactionHash = await writeContract(config, {
           abi: erc20Abi,
-          address: tokenAddress as `0x${string}`,
+          address: validatedTokenAddress,
           functionName: "transfer",
-          args: [data.address as `0x${string}`, BigInt(data.amount)],
+          args: [validatedRecipient, BigInt(data.amount)],
         });
       }
 
@@ -287,18 +302,32 @@ export default function Home() {
         });
 
         balance = {
-          displayValue: Number(queryBalance.value) / 1e18,
+          displayValue: formatEther(queryBalance.value),
           symbol: "tRBTC",
         };
       } else {
+        // Validate and checksum the token address
+        if (!isAddress(tokenAdd)) {
+          throw new Error(`Invalid token address: "${tokenAdd}"`);
+        }
+        const validatedTokenAddress = checksumAddress(tokenAdd as `0x${string}`);
+        
+        // Fetch token decimals for proper formatting (production best practice)
+        const tokenDecimals = await readContract(config, {
+          abi: erc20Abi,
+          address: validatedTokenAddress,
+          functionName: "decimals",
+        }) as number;
+        
         const queryBalance = await readContract(config, {
           abi: erc20Abi,
-          address: checksumAddress(tokenAdd as `0x${string}`) as `0x${string}`,
+          address: validatedTokenAddress,
           functionName: "balanceOf",
           args: [acc],
-        });
+        }) as bigint;
+        
         balance = {
-          displayValue: Number(queryBalance) / 1e18,
+          displayValue: formatUnits(queryBalance, tokenDecimals),
           symbol: tokenSymbol.toUpperCase(),
         };
       }
