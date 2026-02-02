@@ -1,0 +1,114 @@
+modules = ["nodejs-22"]
+
+run = ["bash", "-c", """
+
+# Check if .env file exists, if not, create it with default keys
+if [ ! -f .env ]; then
+    echo "Creating .env file with necessary keys."
+    echo "PRIVATE_KEY=" > .env
+    echo "RSK_TESTNET_RPC=" >> .env
+fi
+
+# Read existing keys from .env file
+keys=($(cut -d '=' -f 1 .env))
+
+# If no keys are found in .env, add the necessary ones
+if [ ${#keys[@]} -eq 0 ]; then
+    echo "No keys found in .env file. Adding necessary keys."
+    echo "PRIVATE_KEY=" >> .env
+    echo "RSK_TESTNET_RPC=" >> .env
+    # Re-read the keys after updating the .env file
+    keys=($(cut -d '=' -f 1 .env))
+fi
+
+# Display the keys to the user
+echo ''
+echo 'Found the following keys in .env:'
+for key in "${keys[@]}"; do
+    echo "- $key"
+done
+
+# Prompt the user for values for each key that doesn't already have a value
+echo ''
+echo 'Enter values for the keys listed above (only for those without values):'
+echo ''
+for key in "${keys[@]}"; do
+    # Check if the key has a value in the .env file
+    current_value=$(grep "^$key=" .env | cut -d '=' -f 2-)
+    
+    # If the current value is empty, prompt the user for input
+    if [ -z "$current_value" ]; then
+        read -p "Enter value for $key: " input
+        if [ -n "$input" ]; then
+            # Update the .env file with the new value
+            sed -i "s|^$key=.*|$key=$input|" .env
+            echo "Updated $key in .env."
+        else
+            echo "No value entered for $key, skipping."
+        fi
+        echo
+    else
+        echo "$key already has a value, skipping."
+    fi 
+done
+echo
+
+
+# Install dependencies and compile
+echo 'Installing hardhat and compiling contracts'
+echo
+npm i -g hardhat && npx hardhat compile
+echo ''
+
+# Now enter interactive mode where the user can run any hardhat command until they type "exit"
+echo "You can now run any hardhat command (e.g., 'npx hardhat deploy', 'npx hardhat test')."
+echo "Type 'exit' to quit."
+echo
+
+# Start an interactive shell for the user to run any Hardhat command
+while true; do
+    # Prompt the user for a command
+    read -p "> " user_command
+
+    # Check if the user typed 'exit' to terminate the loop
+    if [ "$user_command" == "exit" ]; then
+        echo
+        echo "Exiting interactive mode."
+        break
+    fi
+
+    # Run the user-provided Hardhat command
+    if [ -n "$user_command" ]; then
+        $user_command
+    fi
+done
+"""]
+
+[nix]
+channel = "stable-25_05"
+
+[agent]
+expertMode = true
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Demo"
+
+[[workflows.workflow]]
+name = "Demo"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "echo \"n\" | npx hardhat run scripts/demo.js"

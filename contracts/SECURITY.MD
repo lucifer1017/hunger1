@@ -2,13 +2,14 @@
 
 The Rootstock team and community take security bugs in rootstock seriously. Beside this project is out of our Bug Bounty Program scope, we appreciate your efforts to responsibly disclose your findings, and will make every effort to acknowledge your contributions.
 
+
 ## Responsible Disclosure
 
-For all security related issues, ai-agent-rsk has two main points of contact. Reach us at <security@rootstocklabs.com> or use the GitHub Security Advisory ["Report a Vulnerability"](https://github.com/rsksmart/ai-agent-rsk/security/advisories/new) tab.
+For all security related issues, rbtc-usdt0-lending-boilerplate has two main points of contact. Reach us at <security@rootstocklabs.com> or use the GitHub Security Advisory ["Report a Vulnerability"](https://github.com/rsksmart/rbtc-usdt0-lending-boilerplate/security/advisories/new) tab.
 
 The Rootstock team will send a response indicating the next steps in handling your report. After the initial reply to your report, the security team will keep you informed of the progress towards a fix and full announcement, and may ask for additional information or guidance.
 
-**Ensure the bug was not already reported** by searching on GitHub under [Issues](https://github.com/rsksmart/ai-agent-rsk/issues).
+**Ensure the bug was not already reported** by searching on GitHub under [Issues](https://github.com/rsksmart/rbtc-usdt0-lending-boilerplate/issues).
 
 ## Vulnerability Handling
 
@@ -16,18 +17,11 @@ The Rootstock team will send a response indicating the next steps in handling yo
 
 RootstockLabs will make a best effort to meet the following response times for reported vulnerabilities:
 
-- Time to first response (from report submit) - 5 business days
-- Time to triage (from report submit) - 7 business days
+* Time to first response (from report submit) - 5 business days
+* Time to triage (from report submit) - 7 business days
 
 We'll try to keep you informed about our progress throughout the process.
 
 ### Disclose Policy
 
 Follow our [disclosure guidelines](https://www.rootstocklabs.com/bounty-program/).
-
-
-
-
-
-
-

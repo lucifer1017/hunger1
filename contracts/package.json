@@ -1,7 +1,18 @@
 {
-  "name": "contracts",
-  "version": "1.0.0",
+  "name": "rbtc-usdt0-lending-boilerplate",
+  "version": "0.2.0",
+  "private": true,
+  "license": "MIT",
   "type": "module",
+  "scripts": {
+    "build": "hardhat compile",
+    "demo": "hardhat run scripts/demo.js",
+    "demo:testnet": "hardhat run --network rskTestnet scripts/demo-testnet.js",
+    "local": "hardhat node",
+    "test": "hardhat test",
+    "deploy": "hardhat ignition deploy ignition/modules/LendingPool.ts",
+    "deploy:testnet": "hardhat ignition deploy --network rskTestnet ignition/modules/LendingPool.ts"
+  },
   "devDependencies": {
     "@nomicfoundation/hardhat-ignition": "^3.0.6",
     "@nomicfoundation/hardhat-toolbox-viem": "^5.0.1",

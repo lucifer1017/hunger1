@@ -7,17 +7,30 @@
 
 **⚠️ Warning: This is a prototype intended for hackathons, learning, and rapid prototyping. Use it at your own risk. It is not ready for production without further testing.**
 
-This project demonstrates how to build a lightweight conversational AI agent that can interpret natural language and perform blockchain actions like checking token balances and sending tRBTC—all through a chat interface. It runs on the **Rootstock testnet** using [**Groq's LLM API**](https://groq.com/), [**Reown AppKit**](https://reown.com/), and [**Wagmi**](https://wagmi.sh/), all wrapped in a [**Next.js app**](https://nextjs.org/) styled with [**Shadcn UI**](https://ui.shadcn.com/).
+This project demonstrates how to build a lightweight conversational AI agent that can interpret natural language and perform blockchain actions like checking token balances, sending tRBTC, and **managing DeFi lending positions**—all through a chat interface. It runs on the **Rootstock testnet** using [**Groq's LLM API**](https://groq.com/), [**Reown AppKit**](https://reown.com/), and [**Wagmi**](https://wagmi.sh/), all wrapped in a [**Next.js app**](https://nextjs.org/) styled with [**Shadcn UI**](https://ui.shadcn.com/).
 
 > 🔗 Inspired by [BitMate](https://github.com/Zero-Labs-Workspace/BitMate) – a hackathon project exploring the fusion of AI and DeFi on Rootstock.
 
 ## Features
 
 - 🔐 Wallet connection via Reown AppKit (MetaMask, WalletConnect, embedded)
-- 🧠 Natural language interface via Groq LLM API
+- 🧠 Natural language interface via Groq LLM API (Llama 3.3 70B)
 - 💬 Conversational agent with memory and action routing
 - ⚡ Send tRBTC and check token balances using plain English
 - 🖼️ UI powered by Next.js App Router and Shadcn components
+
+### DeFi Lending Operations (New!)
+
+- 🏦 **Deposit Collateral**: Deposit tRBTC as collateral to unlock borrowing capacity
+- 💰 **Borrow USDT0**: Borrow against collateral with automatic validation
+- 🔄 **Withdraw Collateral**: Remove collateral with health factor safety checks
+- 💳 **Repay Debt**: Repay USDT0 debt with automatic ERC20 approval handling
+
+### Portfolio Monitoring (New!)
+
+- 📊 **Real-Time Health Factor**: Continuous monitoring of position health
+- 📈 **LTV Ratio Tracking**: Loan-to-Value ratio calculation and visualization
+- 🚨 **Proactive Alerts**: Intelligent warnings for liquidation risk
 
 ## Prerequisites
 
@@ -48,7 +61,7 @@ Optional but recommended:
      NEXT_PUBLIC_PROJECT_ID=
      NEXT_PUBLIC_RPC_MAINNET=
      NEXT_PUBLIC_RPC_TESTNET=
-     NEXT_PUBLIC_GROQ_API_KEY=
+     GROQ_API_KEY=
      ```
    You can get the api keys this way:
 
@@ -64,11 +77,29 @@ Optional but recommended:
 
 ## Project Structure
 
-- `app/page.tsx` — Main chat UI and wallet interface
+- `app/page.tsx` — Main chat UI and wallet interface with DeFi operations
 - `src/lib/utils.ts` — Wallet address validation and token lookup
 - `src/lib/constants.ts` — Block explorer URLs and other constants
+- `src/lib/portfolio.ts` — Portfolio data fetching from LendingPool contract
+- `src/lib/contracts.ts` — Contract addresses for deployed contracts
+- `src/lib/abis/` — Contract ABIs (LendingPool, MockUSDT0, Oracle)
 - `components/` — Reusable UI components and chat layout
-- `app/api/ai` — Endpoint to call Groq LLM API
+- `app/api/ai` — Endpoint to call Groq LLM API with function calling
+
+## Natural Language Commands
+
+**Portfolio & Lending:**
+- "Show my portfolio"
+- "What's my health factor?"
+- "Deposit 0.001 tRBTC as collateral"
+- "Borrow 100 USDT0"
+- "Withdraw 0.0005 tRBTC"
+- "Repay 50 USDT0"
+
+**Transfers & Balances:**
+- "Send 0.001 tRBTC to 0x..."
+- "What's my tRBTC balance?"
+- "Check balance of 0x..."
 
 ## Contributors
 
@@ -79,6 +110,8 @@ Optional but recommended:
 - **Groq API Key Not Working**: Make sure it's correctly set in `.env.local` and not rate-limited.
 - **Wallet Connection Fails**: Check MetaMask is on the Rootstock Testnet.
 - **Token Not Found**: Make sure the token is an ERC-20 on Rootstock Testnet.
+- **Wrong Network**: The app will automatically prompt to switch to Rootstock Testnet.
+- **Health Factor Errors**: Ensure you have sufficient collateral before borrowing.
 
 ## Contributing
 
